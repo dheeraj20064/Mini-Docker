@@ -17,11 +17,16 @@ type ContainerConfig struct {
 }
 
 // StartContainer starts an isolated container process using the re-exec pattern
-func StartContainer(config ContainerConfig) (*exec.Cmd, int, error) {
+func StartContainer(config ContainerConfig) (*exec.Cmd, int, *os.File, error) {
 	// Get the path to the current executable
 	exe, err := os.Executable()
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get executable path: %v", err)
+		return nil, 0, nil, fmt.Errorf("failed to get executable path: %v", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("failed to create sync pipe: %v", err)
 	}
 
 	// We execute our own binary again, but with the "child" argument.
@@ -36,6 +41,7 @@ func StartContainer(config ContainerConfig) (*exec.Cmd, int, error) {
 	cmd.Stdin  = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.ExtraFiles = []*os.File{r} // Passed as fd 3 in child process
 
 	// Add isolation walls
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -47,14 +53,24 @@ func StartContainer(config ContainerConfig) (*exec.Cmd, int, error) {
 
 	// Start the container
 	err = cmd.Start()
+	r.Close() // Close read end in parent
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to start container child: %v", err)
+		w.Close()
+		return nil, 0, nil, fmt.Errorf("failed to start container child: %v", err)
 	}
 
 	pid := cmd.Process.Pid
 	fmt.Printf("Container started! PID: %d\n", pid)
 
-	return cmd, pid, nil
+	return cmd, pid, w, nil
+}
+
+// SignalContainerReady sends the unblock signal to the child container process
+func SignalContainerReady(w *os.File) {
+	if w != nil {
+		_, _ = w.Write([]byte{1})
+		_ = w.Close()
+	}
 }
 
 // WaitContainer waits for the container process to complete

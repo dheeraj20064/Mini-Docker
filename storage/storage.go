@@ -74,7 +74,54 @@ func PrepareRootFS(containerID string, layerPaths []string) (string, error) {
 		return "", fmt.Errorf("overlay mount failed: %w", err)
 	}
 
+	// Ensure container has working DNS configuration
+	setupDNS(containerMerged)
+
 	return containerMerged, nil
+}
+
+func setupDNS(rootfs string) {
+	resolvPath := filepath.Join(rootfs, "etc", "resolv.conf")
+
+	// Try reading real upstream DNS servers from systemd-resolved file if available
+	content, err := os.ReadFile("/run/systemd/resolve/resolv.conf")
+	if err != nil || len(content) == 0 {
+		content, err = os.ReadFile("/etc/resolv.conf")
+	}
+
+	// Filter lines to remove loopback addresses (127.0.0.X) which won't work in container netns
+	var validLines []string
+	if err == nil && len(content) > 0 {
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "nameserver") && (strings.Contains(trimmed, "127.0.0.") || strings.Contains(trimmed, "::1")) {
+				continue // Skip host loopback stub resolvers
+			}
+			if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+				validLines = append(validLines, line)
+			}
+		}
+	}
+
+	// Check if we have at least one valid non-loopback nameserver
+	hasNameserver := false
+	for _, line := range validLines {
+		if strings.HasPrefix(strings.TrimSpace(line), "nameserver") {
+			hasNameserver = true
+			break
+		}
+	}
+
+	if !hasNameserver {
+		validLines = append(validLines, "nameserver 8.8.8.8", "nameserver 1.1.1.1")
+	}
+
+	finalContent := strings.Join(validLines, "\n") + "\n"
+
+	_ = os.MkdirAll(filepath.Join(rootfs, "etc"), 0755)
+	_ = os.Remove(resolvPath) // Remove any existing symlink/file
+	_ = os.WriteFile(resolvPath, []byte(finalContent), 0644)
 }
 
 // CleanupRootFS unmounts the merged directory and removes container-specific data

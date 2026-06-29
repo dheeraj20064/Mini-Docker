@@ -51,7 +51,15 @@ func main() {
 		if _, err := os.Stat(targetBinary); os.IsNotExist(err) {
 			fmt.Printf("[Child] Warning: Binary %s not directly stat-able in rootfs.\n", targetBinary)
 		} else {
-			fmt.Printf("[Child] Found binary %s. Proceeding to execute...\n", targetBinary)
+			fmt.Printf("[Child] Found binary %s. Awaiting host network and cgroup readiness...\n", targetBinary)
+		}
+
+		// Block and wait for synchronization signal from parent (fd 3)
+		syncFile := os.NewFile(3, "sync")
+		if syncFile != nil {
+			buf := make([]byte, 1)
+			_, _ = syncFile.Read(buf)
+			syncFile.Close()
 		}
 
 		// Execute the final command

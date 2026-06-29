@@ -65,7 +65,7 @@ func Run(config RunConfig) error {
 	defer container.CleanupCgroup(containerID)
 
 	// Step 2: Start isolated container child process
-	cmdProc, pid, err := container.StartContainer(container.ContainerConfig{
+	cmdProc, pid, syncWriter, err := container.StartContainer(container.ContainerConfig{
 		ID:       containerID,
 		Hostname: containerID,
 		RootFS:   rootfs,
@@ -92,7 +92,10 @@ func Run(config RunConfig) error {
 	}
 	fmt.Printf("Container PID: %d\n", pid)
 
-	// Step 5: Wait for container to exit
+	// Step 5: Unblock child process now that cgroup and network setup are complete
+	container.SignalContainerReady(syncWriter)
+
+	// Step 6: Wait for container to exit
 	if err := container.WaitContainer(cmdProc); err != nil {
 		fmt.Printf("Container process execution completed with error: %v\n", err)
 	} else {
