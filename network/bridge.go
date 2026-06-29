@@ -1,28 +1,39 @@
 package network
+
 import (
-	'fmt'
-	'os/exec'
+	"fmt"
+	"os/exec"
 )
-func CreateBridge() error{
-	fmt.Println('[Network ] Creating bridge md-br0')
-	err :=exec.Command('ip','link','add','name','md-br0','type','bridge').Run()
-	if err != nil{
-		fmt.Println('[Network] may already exist')
+
+// CreateBridge provisions the host-side virtual software switch (md-br0)
+func CreateBridge() error {
+	fmt.Println("[Network] Creating bridge md-br0...")
+	
+	// Create the bridge interface
+	err := exec.Command("ip", "link", "add", "name", "md-br0", "type", "bridge").Run()
+	if err != nil {
+		// If the bridge already exists, we can ignore the error
+		fmt.Println("[Network] Bridge md-br0 may already exist, skipping creation.")
 	}
-	err := exec.Command('ip','addr','add','172.20.0.1/24','dev','md-br0').Run()
-	if err!= nil
-	{
-		fmt.Println('[Network ] IP may already exist')
+
+	// Assign IP address to the bridge
+	err = exec.Command("ip", "addr", "add", "172.20.0.1/24", "dev", "md-br0").Run()
+	if err != nil {
+		fmt.Println("[Network] IP address for md-br0 may already exist, skipping assignment.")
 	}
-	err := exec.Command('ip','link','set','md-br0','up').Run()
-	if err! = nil
-	{
-		return fmt.Errorf(F'ailed to set up Bridge: %v',err)
+
+	// Bring the bridge interface up
+	err = exec.Command("ip", "link", "set", "md-br0", "up").Run()
+	if err != nil {
+		return fmt.Errorf("failed to set up bridge md-br0: %v", err)
 	}
-	fmt.Println('[Network] Bridge is Ready!!')
+
+	fmt.Println("[Network] Bridge is ready!")
 	return nil
 }
+
+// DeleteBridge removes the bridge interface from the host
 func DeleteBridge() {
-	exec.Command('ip','link','delete','md-br0')
-	fmt.Println('The bridge removed')
+	fmt.Println("[Network] Removing bridge md-br0...")
+	exec.Command("ip", "link", "delete", "md-br0").Run()
 }
